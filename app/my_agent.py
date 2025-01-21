@@ -5,9 +5,12 @@ from streamlit import session_state as ss
 from db_utils import save_agent, delete_agent
 from llms import llm_providers_and_models, create_llm
 from datetime import datetime
+import json
 
 class MyAgent:
-    def __init__(self, id=None, role=None, backstory=None, goal=None, temperature=None, allow_delegation=False, verbose=False, cache= None, llm_provider_model=None, max_iter=None, created_at=None, tools=None):
+    def __init__(self, id=None, role=None, backstory=None, goal=None, temperature=None, allow_delegation=False,
+                 verbose=False, cache=None, llm_provider_model=None, max_iter=None, created_at=None, tools=None,
+                 config=None, max_rpm=None, max_tokens=None, **kwargs):
         self.id = id or "A_" + rnd_id()
         self.role = role or "Senior Researcher"
         self.backstory = backstory or "Driven by curiosity, you're at the forefront of innovation, eager to explore and share knowledge that could change the world."
@@ -20,9 +23,16 @@ class MyAgent:
         self.tools = tools or []
         self.max_iter = max_iter or 25
         self.cache = cache if cache is not None else True
+        self.config = config or {}
+        self.max_rpm = max_rpm or 60
+        self.max_tokens = max_tokens or 512
         self.edit_key = f'edit_{self.id}'
         if self.edit_key not in ss:
             ss[self.edit_key] = False
+
+        # Ignore any unexpected keyword arguments
+        # for key, value in kwargs.items():
+        #     print(f"Ignoring unexpected argument: {key}={value}")
 
     @property
     def edit(self):
@@ -33,6 +43,7 @@ class MyAgent:
         ss[self.edit_key] = value
 
     def get_crewai_agent(self) -> Agent:
+        try:
             llm = create_llm(self.llm_provider_model, temperature=self.temperature)
             tools = [tool.create_tool() for tool in self.tools]
             return Agent(
@@ -44,8 +55,13 @@ class MyAgent:
                 max_iter=self.max_iter,
                 cache=self.cache,
                 tools=tools,
-                llm=llm
+                llm=llm,
+                max_rpm=self.max_rpm,
+                max_tokens=self.max_tokens,
+                config=self.config
             )
+        except ValueError as e:
+            st.error(str(e))
 
     def delete(self):
         ss.agents = [agent for agent in ss.agents if agent.id != self.id]
@@ -81,9 +97,12 @@ class MyAgent:
                     self.allow_delegation = st.checkbox("Allow delegation", value=self.allow_delegation)
                     self.verbose = st.checkbox("Verbose", value=self.verbose)
                     self.cache = st.checkbox("Cache", value=self.cache)
+                    self.config = st.text_area("Config (JSON)", value=json.dumps(self.config, indent=2))
                     self.llm_provider_model = st.selectbox("LLM Provider and Model", options=llm_providers_and_models(), index=llm_providers_and_models().index(self.llm_provider_model))
                     self.temperature = st.slider("Temperature", value=self.temperature, min_value=0.0, max_value=1.0)
                     self.max_iter = st.number_input("Max Iterations", value=self.max_iter, min_value=1, max_value=100)
+                    self.max_rpm = st.number_input("Max RPM", value=self.max_rpm, min_value=1, max_value=120)
+                    self.max_tokens = st.number_input("Max Tokens", value=self.max_tokens, min_value=1, max_value=2048)
                     enabled_tools = [tool for tool in ss.tools]
                     selected_tools = st.multiselect(
                         "Select Tools",
@@ -107,6 +126,8 @@ class MyAgent:
                 st.markdown(f"**LLM Provider and Model:** {self.llm_provider_model}")
                 st.markdown(f"**Temperature:** {self.temperature}")
                 st.markdown(f"**Max Iterations:** {self.max_iter}")
+                st.markdown(f"**Max RPM:** {self.max_rpm}")
+                st.markdown(f"**Max Tokens:** {self.max_tokens}")
                 st.markdown(f"**Tools:** {[self.get_tool_display_name(tool) for tool in self.tools]}")
 
                 self.is_valid(show_warning=True)

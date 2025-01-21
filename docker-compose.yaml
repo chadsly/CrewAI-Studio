@@ -29,6 +29,7 @@ services:
       # - DB_URL=${DB_URL}
     ports:
       - "8501:8501"
+      - "8000:8000"
 
 volumes:
   db-data:

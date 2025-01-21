@@ -5,22 +5,33 @@ from streamlit import session_state as ss
 from datetime import datetime
 from llms import llm_providers_and_models, create_llm
 import db_utils
+import json
 
 class MyCrew:
-    def __init__(self, id=None, name=None, agents=None, tasks=None, process=None, cache=None,max_rpm=None, verbose=None, manager_llm=None, manager_agent=None, created_at=None, memory=None, planning=None):
+    def __init__(self, id=None, name=None, process=None, verbose=None, agents=None, tasks=None, memory=None,
+                 cache=None, planning=None, max_rpm=None, manager_llm=None, manager_agent=None, created_at=None,
+                 function_calling_llm=None, config=None, prompt_file=None, memory_config=None,
+                 task_callback=None, step_callback=None, share_crew=None):
         self.id = id or "C_" + rnd_id()
         self.name = name or "Crew 1"
+        self.process = process or Process.sequential
+        self.verbose = verbose if verbose is not None else True
         self.agents = agents or []
         self.tasks = tasks or []
-        self.process = process or Process.sequential
-        self.verbose = bool(verbose) if verbose is not None else True
-        self.manager_llm = manager_llm
-        self.manager_agent = manager_agent
         self.memory = memory if memory is not None else False
         self.cache = cache if cache is not None else True
-        self.max_rpm = max_rpm or 1000
         self.planning = planning if planning is not None else False
+        self.max_rpm = max_rpm or 1000
+        self.manager_llm = manager_llm
+        self.manager_agent = manager_agent
         self.created_at = created_at or datetime.now().isoformat()
+        self.function_calling_llm = function_calling_llm or ""  # Default to empty string
+        self.config = config or {}  # Default to empty dictionary
+        self.prompt_file = prompt_file or ""  # Default to empty string
+        self.memory_config = memory_config or {}   # Default to empty dictionary
+        self.task_callback = task_callback or (lambda *args, **kwargs: None)  # Default no-op function
+        self.step_callback = step_callback or (lambda *args, **kwargs: None)  # Default no-op function
+        self.share_crew = share_crew if share_crew is not None else False  # Default to False
         self.edit_key = f'edit_{self.id}'
         if self.edit_key not in ss:
             ss[self.edit_key] = False
@@ -74,44 +85,27 @@ class MyCrew:
         # Collect the final list of tasks in the original order
         crewai_tasks = [task_objects[task.id] for task in self.tasks]
 
-        if self.manager_llm:
-            return Crew(
-                agents=crewai_agents,
-                tasks=crewai_tasks,
-                cache=self.cache,
-                process=self.process,
-                max_rpm=self.max_rpm,
-                verbose=self.verbose,
-                manager_llm=create_llm(self.manager_llm),
-                memory=self.memory,
-                planning=self.planning,
-                *args, **kwargs
-            )
-        elif self.manager_agent:
-            return Crew(
-                agents=crewai_agents,
-                tasks=crewai_tasks,
-                cache=self.cache,
-                process=self.process,
-                max_rpm=self.max_rpm,
-                verbose=self.verbose,
-                manager_agent=self.manager_agent.get_crewai_agent(),
-                memory=self.memory,
-                planning=self.planning,
-                *args, **kwargs
-            )
-        cr = Crew(
-        agents=crewai_agents,
-        tasks=crewai_tasks,
-        cache=self.cache,
-        process=self.process,
-        max_rpm=self.max_rpm,
-        verbose=self.verbose,
-        memory=self.memory,
-        planning=self.planning,
-        *args, **kwargs
+        return Crew(
+            agents=crewai_agents,
+            tasks=crewai_tasks,
+            process=self.process,
+            verbose=self.verbose,
+            memory=self.memory,
+            cache=self.cache,
+            planning=self.planning,
+            max_rpm=self.max_rpm,
+            manager_llm=create_llm(self.manager_llm) if self.manager_llm else None,
+            manager_agent=self.manager_agent.get_crewai_agent() if self.manager_agent else None,
+            function_calling_llm=self.function_calling_llm,
+            config=self.config,
+            prompt_file=self.prompt_file,
+            memory_config=self.memory_config,
+            task_callback=self.task_callback,
+            step_callback=self.step_callback,
+            share_crew=self.share_crew,
+            created_at=self.created_at,
+            *args, **kwargs
         )
-        return cr
     
     def delete(self):
         ss.crews = [crew for crew in ss.crews if crew.id != self.id]
@@ -159,8 +153,46 @@ class MyCrew:
         self.memory = ss[f'memory_{self.id}']
         db_utils.save_crew(self)
     
+    def update_memory_config(self):
+        try:
+            # Attempt to parse the JSON string from Streamlit session state
+            updated_config = json.loads(ss[f'memory_config_{self.id}'])
+            self.memory_config = updated_config
+            self.validate_memory_config()
+            db_utils.save_crew(self)
+        except json.JSONDecodeError:
+            st.error("Invalid JSON format for memory_config.")
+        except ValueError as e:
+            st.error(str(e))
+
+    
     def update_max_rpm(self):
         self.max_rpm = ss[f'max_rpm_{self.id}']
+        db_utils.save_crew(self)
+    
+    def update_function_calling_llm(self):
+        self.function_calling_llm = ss[f'function_calling_llm_{self.id}']
+        db_utils.save_crew(self)
+    
+    def update_config(self):
+        self.validate_config()
+        self.config = ss[f'config_{self.id}']
+        db_utils.save_crew(self)
+    
+    def update_prompt_file(self):
+        self.prompt_file = ss[f'prompt_file_{self.id}']
+        db_utils.save_crew(self)
+    
+    def update_task_callback(self):
+        self.task_callback = ss[f'task_callback_{self.id}']
+        db_utils.save_crew(self)
+    
+    def update_step_callback(self):
+        self.step_callback = ss[f'step_callback_{self.id}']
+        db_utils.save_crew(self)
+    
+    def update_share_crew(self):
+        self.share_crew = ss[f'share_crew_{self.id}']
         db_utils.save_crew(self)
 
     def update_cache(self):
@@ -195,8 +227,69 @@ class MyCrew:
         if self.manager_llm and self.manager_llm not in available_models:
             self.manager_llm = None
 
-    def draw(self,expanded=False, buttons=True):
+    def validate_config(self):
+        """
+        Performs lightweight validation of memory_config to ensure the format is correct and not harmful.
+        """
+        if not isinstance(self.memory_config, dict):
+            raise ValueError("memory_config must be a dictionary.")
+
+        # Validate nested 'config' key if it exists
+        if "config" in self.memory_config:
+            if not isinstance(self.memory_config["config"], dict):
+                raise ValueError("The 'config' field in memory_config must be a dictionary.")
+            
+            # Optional: Check if the nested dictionary has valid keys/values
+            for key, value in self.memory_config["config"].items():
+                if not isinstance(key, str):
+                    raise ValueError(f"Invalid key in memory_config['config']: {key}. Keys must be strings.")
+                if not isinstance(value, (str, int, float, bool, type(None))):  # Allow basic JSON types
+                    raise ValueError(f"Invalid value for key '{key}' in memory_config['config']: {value}.")
+        
+        # Optional: Limit size/depth to avoid abuse
+        if len(self.memory_config) > 10:  # Limit top-level keys
+            raise ValueError("memory_config has too many top-level keys.")
+        if len(self.memory_config.get("config", {})) > 50:  # Limit keys in nested 'config'
+            raise ValueError("memory_config['config'] has too many keys.")
+        
+    def validate_memory_config(self):
+        """
+        Performs lightweight validation of memory_config to ensure the format is correct and not harmful.
+        """
+        if not isinstance(self.memory_config, dict):
+            raise ValueError("memory_config must be a dictionary.")
+
+        # Validate nested 'config' key if it exists
+        if "config" in self.memory_config:
+            if not isinstance(self.memory_config["config"], dict):
+                raise ValueError("The 'config' field in memory_config must be a dictionary.")
+            
+            # Optional: Check if the nested dictionary has valid keys/values
+            for key, value in self.memory_config["config"].items():
+                if not isinstance(key, str):
+                    raise ValueError(f"Invalid key in memory_config['config']: {key}. Keys must be strings.")
+                if not isinstance(value, (str, int, float, bool, type(None))):  # Allow basic JSON types
+                    raise ValueError(f"Invalid value for key '{key}' in memory_config['config']: {value}.")
+        
+        # Optional: Limit size/depth to avoid abuse
+        if len(self.memory_config) > 10:  # Limit top-level keys
+            raise ValueError("memory_config has too many top-level keys.")
+        if len(self.memory_config.get("config", {})) > 50:  # Limit keys in nested 'config'
+            raise ValueError("memory_config['config'] has too many keys.")
+
+    def draw(self, expanded=False, buttons=True):
         self.validate_manager_llm()
+        self.validate_memory_config()
+
+        self.function_calling_llm = self.function_calling_llm or ""
+        self.config = self.config or {}
+        self.prompt_file = self.prompt_file or ""
+        self.memory_config = self.memory_config or {}
+        self.task_callback = self.task_callback or (lambda *args, **kwargs: None)
+        self.step_callback = self.step_callback or (lambda *args, **kwargs: None)
+        self.share_crew = self.share_crew if self.share_crew is not None else False
+
+        # Keys for Streamlit session state
         name_key = f"name_{self.id}"
         process_key = f"process_{self.id}"
         verbose_key = f"verbose_{self.id}"
@@ -208,24 +301,79 @@ class MyCrew:
         planning_key = f"planning_{self.id}"
         cache_key = f"cache_{self.id}"
         max_rpm_key = f"max_rpm_{self.id}"
-        
+        function_calling_llm_key = f"function_calling_llm_{self.id}"
+        config_key = f"config_{self.id}"
+        prompt_file_key = f"prompt_file_{self.id}"
+        memory_config_key = f"memory_config_{self.id}"
+        task_callback_key = f"task_callback_{self.id}"
+        step_callback_key = f"step_callback_{self.id}"
+        share_crew_key = f"share_crew_{self.id}"
+
         if self.edit:
-            with st.container(border=True):
-                st.text_input("Name (just id, it doesn't affect anything)", value=self.name, key=name_key, on_change=self.update_name)
-                st.selectbox("Process", options=[Process.sequential, Process.hierarchical], index=[Process.sequential, Process.hierarchical].index(self.process), key=process_key, on_change=self.update_process)
-                st.multiselect("Agents", options=[agent.role for agent in ss.agents], default=[agent.role for agent in self.agents], key=agents_key, on_change=self.update_agents)                
+            with st.container():
+                st.text_input("Name (for display purposes)", value=self.name, key=name_key, on_change=self.update_name)
+                st.selectbox(
+                    "Process",
+                    options=[Process.sequential, Process.hierarchical],
+                    index=[Process.sequential, Process.hierarchical].index(self.process),
+                    key=process_key,
+                    on_change=self.update_process
+                )
+                st.multiselect(
+                    "Agents",
+                    options=[agent.role for agent in ss.agents],
+                    default=[agent.role for agent in self.agents],
+                    key=agents_key,
+                    on_change=self.update_agents
+                )
                 # Filter tasks by selected agents
                 available_tasks = [task for task in ss.tasks if task.agent and task.agent.id in [agent.id for agent in self.agents]]
                 available_task_ids = [task.id for task in available_tasks]
-                default_task_ids = [task.id for task in self.tasks if task.id in available_task_ids]             
-                st.multiselect("Tasks", options=available_task_ids, default=default_task_ids, format_func=lambda x: next(task.description for task in ss.tasks if task.id == x), key=tasks_key, on_change=self.update_tasks)                
-                st.selectbox("Manager LLM", options=["None"] + llm_providers_and_models(), index=0 if self.manager_llm is None else llm_providers_and_models().index(self.manager_llm) + 1, key=manager_llm_key, on_change=self.update_manager_llm, disabled=(self.process != Process.hierarchical))
-                st.selectbox("Manager Agent", options=["None"] + [agent.role for agent in ss.agents], index=0 if self.manager_agent is None else [agent.role for agent in ss.agents].index(self.manager_agent.role) + 1, key=manager_agent_key, on_change=self.update_manager_agent, disabled=(self.process != Process.hierarchical))
+                default_task_ids = [task.id for task in self.tasks if task.id in available_task_ids]
+                st.multiselect(
+                    "Tasks",
+                    options=available_task_ids,
+                    default=default_task_ids,
+                    format_func=lambda x: next(task.description for task in ss.tasks if task.id == x),
+                    key=tasks_key,
+                    on_change=self.update_tasks
+                )
+                st.selectbox(
+                    "Manager LLM",
+                    options=["None"] + llm_providers_and_models(),
+                    index=0 if self.manager_llm is None else llm_providers_and_models().index(self.manager_llm) + 1,
+                    key=manager_llm_key,
+                    on_change=self.update_manager_llm,
+                    disabled=(self.process != Process.hierarchical)
+                )
+                st.selectbox(
+                    "Manager Agent",
+                    options=["None"] + [agent.role for agent in ss.agents],
+                    index=0 if self.manager_agent is None else [agent.role for agent in ss.agents].index(self.manager_agent.role) + 1,
+                    key=manager_agent_key,
+                    on_change=self.update_manager_agent,
+                    disabled=(self.process != Process.hierarchical)
+                )
                 st.checkbox("Verbose", value=self.verbose, key=verbose_key, on_change=self.update_verbose)
                 st.checkbox("Memory", value=self.memory, key=memory_key, on_change=self.update_memory)
                 st.checkbox("Cache", value=self.cache, key=cache_key, on_change=self.update_cache)
                 st.checkbox("Planning", value=self.planning, key=planning_key, on_change=self.update_planning)
-                st.number_input("Max req/min", value=self.max_rpm, key=max_rpm_key, on_change=self.update_max_rpm)    
+                st.number_input("Max Requests per Minute", value=self.max_rpm, min_value=1, key=max_rpm_key, on_change=self.update_max_rpm)
+
+                # New attributes
+                st.text_input("Function Calling LLM", value=self.function_calling_llm or "", key=function_calling_llm_key, on_change=self.update_function_calling_llm)
+                st.text_area("Config (JSON)", value=str(self.config), key=config_key, on_change=self.update_config)
+                st.text_input("Prompt File", value=self.prompt_file or "", key=prompt_file_key, on_change=self.update_prompt_file)
+                st.text_area(
+                    "Memory Config (JSON)",
+                    value=json.dumps(self.memory_config, indent=2),
+                    key=memory_config_key,
+                    on_change=self.update_memory_config
+                )
+                st.text_input("Task Callback", value=str(self.task_callback) if self.task_callback else "", key=task_callback_key, on_change=self.update_task_callback)
+                st.text_input("Step Callback", value=str(self.step_callback) if self.step_callback else "", key=step_callback_key, on_change=self.update_step_callback)
+                st.checkbox("Share Crew", value=self.share_crew, key=share_crew_key, on_change=self.update_share_crew)
+
                 st.button("Save", on_click=self.set_editable, args=(False,), key=rnd_id())
         else:
             fix_columns_width()
@@ -233,27 +381,37 @@ class MyCrew:
             with st.expander(expander_title, expanded=expanded):
                 st.markdown(f"**Process:** {self.process}")
                 if self.process == Process.hierarchical:
-                    st.markdown(f"**Manager LLM:** {self.manager_llm}")
+                    st.markdown(f"**Manager LLM:** {self.manager_llm or 'None'}")
                     st.markdown(f"**Manager Agent:** {self.manager_agent.role if self.manager_agent else 'None'}")
                 st.markdown(f"**Verbose:** {self.verbose}")
                 st.markdown(f"**Memory:** {self.memory}")
                 st.markdown(f"**Cache:** {self.cache}")
                 st.markdown(f"**Planning:** {self.planning}")
-                st.markdown(f"**Max req/min:** {self.max_rpm}")
+                st.markdown(f"**Max Requests per Minute:** {self.max_rpm}")
+
+                # Display new attributes
+                st.markdown(f"**Function Calling LLM:** {self.function_calling_llm or 'None'}")
+                st.markdown(f"**Config:** {self.config}")
+                st.markdown(f"**Prompt File:** {self.prompt_file or 'None'}")
+                st.markdown(f"**Memory Config:** {self.memory_config}")
+                st.markdown(f"**Task Callback:** {self.task_callback or 'None'}")
+                st.markdown(f"**Step Callback:** {self.step_callback or 'None'}")
+                st.markdown(f"**Share Crew:** {'Yes' if self.share_crew else 'No'}")
+
                 st.markdown("**Tasks:**")
                 for i, task in enumerate([task for task in self.tasks if task.agent and task.agent.id in [agent.id for agent in self.agents]], 1):
-                    with st.container(border=True):
+                    with st.container():
                         async_tag = "(async)" if task.async_execution else ""
                         st.markdown(f"**{i}.{async_tag}  {task.description}**")
                         st.markdown(f"**Agent:** {task.agent.role if task.agent else 'None'}")
                         tools_list = ", ".join([tool.name for tool in task.agent.tools]) if task.agent else "None"
-                        st.markdown(f" **Tools:** {tools_list}")
-                        st.markdown(f" **LLM:** {task.agent.llm_provider_model}")
+                        st.markdown(f"**Tools:** {tools_list}")
+                        st.markdown(f"**LLM:** {task.agent.llm_provider_model}")
                 if buttons:
                     col1, col2 = st.columns(2)
-                    with col1:                    
-                        st.button("Edit", on_click=self.set_editable, key=rnd_id(), args=(True,))
-                    with col2:                   
+                    with col1:
+                        st.button("Edit", on_click=self.set_editable, args=(True,), key=rnd_id())
+                    with col2:
                         st.button("Delete", on_click=self.delete, key=rnd_id())
                 self.is_valid(show_warning=True)
 

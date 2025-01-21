@@ -12,10 +12,17 @@ RUN apt-get install build-essential -y
 RUN mkdir /CrewAI-Studio
 COPY ./ /CrewAI-Studio/
 
-# into deer
+# Set working directory
 WORKDIR /CrewAI-Studio
+
+# Set PYTHONPATH to include the app directory
+ENV PYTHONPATH="/CrewAI-Studio/app"
+
+# Install required packages
 RUN pip install -r requirements.txt
 
-# Run app
-CMD ["streamlit","run","./app/app.py","--server.headless","true"]
-EXPOSE 8501
+EXPOSE 8501 8000
+
+# Start both Streamlit and FastAPI
+CMD ["sh", "-c", "streamlit run ./app/app.py --server.port=8501 & uvicorn app:api_app --host 0.0.0.0 --port 8000 --reload"]
+# CMD ["sh", "-c", "streamlit run ./app/app.py --server.port=8501"]

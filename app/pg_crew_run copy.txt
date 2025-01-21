@@ -28,7 +28,7 @@ class PageCrewRun:
             'placeholders': {},
             'console_output': [],
             'last_update': time.time(),
-            'console_expanded': ss.get('running', False),
+            'console_expanded': True,  # Přidáme nový stav
         }
         for key, value in defaults.items():
             if key not in ss:
@@ -73,6 +73,18 @@ class PageCrewRun:
                 "enabled": True
             }
         }))
+
+
+        # # Use the custom HTML template
+        # with open('./app/custom_graph.html', 'r') as file:
+        #     template = file.read()
+
+        # net.html = template  # Assign the custom template to PyVis
+        # net.write_html("custom_graph_rendered.html")  # Save the rendered graph
+
+        # # Render the graph in Streamlit
+        # components.html(open("custom_graph_rendered.html", "r").read(), height=600)
+        # Save and render the graph
         net.write_html("custom_graph_rendered.html")
 
         # Render the graph in Streamlit
@@ -100,6 +112,55 @@ class PageCrewRun:
         
         return placeholders
 
+    # def run_crew(self, crewai_crew, inputs, message_queue):
+    #     print("Run Crew!")
+    #     if (str(os.getenv('AGENTOPS_ENABLED')).lower() in ['true', '1']) and not ss.get('agentops_failed', False):
+    #         import agentops
+    #         agentops.start_session()
+    #     try:
+    #         def monitor_kickoff():
+    #             try:
+    #                 # Assume kickoff supports internal progress or has a monitoring hook
+    #                 result = crewai_crew.kickoff(inputs=inputs)
+    #                 # message_queue.put({"status": "completed", "result": result})
+    #                 message_queue.put({"result": result})
+    #             except Exception as e:
+    #                 stack_trace = traceback.format_exc()
+    #                 print(f"Error in kickoff: {str(e)}\n{stack_trace}")
+    #                 message_queue.put({"status": "error", "error": str(e), "stack_trace": stack_trace})
+
+    #         # Start the kickoff process in a separate thread
+    #         kickoff_thread = threading.Thread(target=monitor_kickoff)
+    #         kickoff_thread.start()
+
+    #         # Monitor the message queue
+    #         while kickoff_thread.is_alive():
+    #             try:
+    #                 # Wait for messages with a timeout to avoid blocking indefinitely
+    #                 message = message_queue.get(timeout=1)
+    #                 print(f"Message received: {message}")  # Log updates for debugging
+
+    #                 # Break if a completion message is received
+    #                 if message.get("result"):
+    #                     print("Crew execution completed.")
+    #                 #     break
+    #                 # elif message.get("status") == "error":
+    #                 #     print("An error occurred during execution.")
+    #                     break
+    #             except queue.Empty:
+    #                 # No new messages, continue monitoring
+    #                 continue
+
+    #         kickoff_thread.join()  # Ensure thread completes
+    #     except Exception as e:
+    #         if (str(os.getenv('AGENTOPS_ENABLED')).lower() in ['true', '1']) and not ss.get('agentops_failed', False):
+    #             agentops.end_session()
+    #         stack_trace = traceback.format_exc()
+    #         print(f"Error running crew: {str(e)}\n{stack_trace}")
+    #         message_queue.put({"result": f"Error running crew: {str(e)}", "stack_trace": stack_trace})
+    #     finally:
+    #         if hasattr(ss, 'console_capture'):
+    #             ss.console_capture.stop()
     def run_crew(self, crewai_crew, inputs, message_queue):
         if (str(os.getenv('AGENTOPS_ENABLED')).lower() in ['true', '1']) and not ss.get('agentops_failed', False):
             import agentops
@@ -206,21 +267,14 @@ class PageCrewRun:
             st.rerun()
 
     def display_result(self):
-        # Ensure the console output expander is expanded when the kickoff starts
-        if ss.running:
-            ss.console_expanded = True  # Automatically expand the console if running
-        elif "console_expanded" not in ss:
-            ss.console_expanded = False  # Default to collapsed when not running
-
         if ss.running and ss.page != "Kickoff!":
             ss.page = "Kickoff!"
             st.rerun()
-
         console_container = st.empty()
-        
+
         with console_container.container():
-            with st.expander("Console Output", expanded=ss.console_expanded):
-                col1, col2 = st.columns([6,1])
+            with st.expander("Console Output", expanded=False):
+                col1, col2 = st.columns([6, 1])
                 with col2:
                     if st.button("Clear console"):
                         ss.console_output = []
@@ -228,39 +282,41 @@ class PageCrewRun:
 
                 console_text = "\n".join(ss.console_output)
                 st.code(console_text, language=None)
-
+        print("Running: ", ss.running)
+        print("Page: ", ss.crew_thread)
+        print("Result: ", ss.result)
         if ss.result is not None:
+            # Display the result if it's available
             if isinstance(ss.result, dict):
-                if 'final_output' in ss.result["result"]:
+                if 'final_output' in ss.result.get("result", {}):
                     st.expander("Final output", expanded=True).write(ss.result["result"]['final_output'])
-                elif hasattr(ss.result["result"], 'raw'):
+                elif hasattr(ss.result.get("result", {}), 'raw'):
                     st.expander("Final output", expanded=True).write(ss.result['result'].raw)
                 st.expander("Full output", expanded=False).write(ss.result)
             else:
                 st.error(ss.result)
         elif ss.running and ss.crew_thread is not None:
-            console_container = st.empty()  # Placeholder for console or spinner
-            with console_container.container():
-                with st.spinner("Running crew..."):  # Spinner persists until running ends
-                    while ss.running:
-                        if hasattr(ss, 'console_capture'):
-                            new_output = ss.console_capture.get_output()
-                            if new_output:
-                                ss.console_output.extend(new_output)
+            with st.spinner("Running crew..."):
+                # Capture console output if available
+                if hasattr(ss, 'console_capture'):
+                    new_output = ss.console_capture.get_output()
+                    if new_output:
+                        ss.console_output.extend(new_output)
 
-                        try:
-                            # Check for messages from the queue
-                            message = ss.message_queue.get_nowait()
-                            ss.result = message
-                            ss.running = False
-                            ss.console_expanded = False
-                            if hasattr(ss, 'console_capture'):
-                                ss.console_capture.stop()
-                            break  # Exit the loop when the crew finishes
-                        except queue.Empty:
-                            time.sleep(0.5)  # Small delay to avoid excessive CPU usage
-
-                    st.rerun()  # Reload the page to update UI state
+                # Try to get a message from the queue
+                try:
+                    message = ss.message_queue.get_nowait()
+                    # Process message
+                    if message.get("status") == "completed":
+                        ss.result = message
+                        ss.running = False
+                    elif message.get("status") == "error":
+                        ss.result = message
+                        ss.running = False
+                    st.rerun()
+                except queue.Empty:
+                    time.sleep(1)
+                    st.rerun()
 
 
     @staticmethod
@@ -278,3 +334,4 @@ class PageCrewRun:
         st.subheader(self.name)
         self.draw_crews()
         self.display_result()
+        self.display_graph()

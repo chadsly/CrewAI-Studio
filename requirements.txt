@@ -1,5 +1,5 @@
 crewai
-crewai-tools
+crewai-tools==0.25.8
 langchain
 langchain-community
 langchain-openai
@@ -11,3 +11,6 @@ python-dotenv
 pdfminer.six
 sqlalchemy
 psycopg2-binary
+pyvis
+fastapi
+uvicorn

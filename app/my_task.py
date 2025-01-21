@@ -10,7 +10,7 @@ class MyTask:
         self.id = id or "T_" + rnd_id()
         self.description = description or "Identify the next big trend in AI. Focus on identifying pros and cons and the overall narrative."
         self.expected_output = expected_output or "A comprehensive 3 paragraphs long report on the latest AI trends."
-        self.agent = agent or ss.agents[0] if ss.agents else None
+        self.agent = agent or kwargs.get('default_agent')
         self.async_execution = async_execution or False
         self.context_from_async_tasks_ids = context_from_async_tasks_ids or None
         self.context_from_sync_tasks_ids = context_from_sync_tasks_ids or None
