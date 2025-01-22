@@ -10,12 +10,6 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # steps:
-    #   - uses: actions/checkout@v4
-    #   - name: Extract project name and build Docker image
-    #     run: |
-    #       repo_name=$(echo "${{ github.repository }}" | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')
-    #       docker build . --file Dockerfile --tag "$repo_name:$(date +%s)"
     steps:
       # Checkout the repository
       - uses: actions/checkout@v4
@@ -28,15 +22,16 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Build the Docker image
+      # Build the Docker image with a dynamic tag
       - name: Build the Docker image
         run: |
-          docker build . --file Dockerfile --tag ghcr.io/${{ github.repository_owner }}/my-project:latest
           repo_name=$(echo "${{ github.repository }}" | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')
-          tag="$repo_name:$(date +%s)"
+          tag="ghcr.io/${{ github.repository_owner }}/$repo_name:$(date +%Y%m%d%H%M%S)"
+          echo "Built image with tag: $tag"
           docker build . --file Dockerfile --tag "$tag"
+          echo "tag=$tag" >> $GITHUB_ENV
 
       # Push the Docker image
       - name: Push the Docker image
         run: |
-          docker push ghcr.io/${{ github.repository_owner }}/$tag
+          docker push ${{ env.tag }}
