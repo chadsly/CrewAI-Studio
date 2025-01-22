@@ -1,12 +1,19 @@
-# Baseimage
-FROM python:3.12.5-slim-bookworm
+# # Baseimage
+# FROM python:3.12.5-slim-bookworm
 
-# Update Packages
-RUN apt update
-RUN apt upgrade -y
-RUN pip install --upgrade pip
-# install git
-RUN apt-get install build-essential -y
+# # Update Packages
+# RUN apt update
+# RUN apt upgrade -y
+# RUN pip install --upgrade pip
+# # install git
+# RUN apt-get install build-essential -y
+FROM python:3.12.5-alpine
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    && pip install -r requirements.txt \
+    && apt-get purge -y --auto-remove build-essential \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy CrewAI-Studio
 RUN mkdir /CrewAI-Studio
