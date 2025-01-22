@@ -7,9 +7,7 @@ on:
     branches: [ "main" ]
 
 jobs:
-
   build:
-
     runs-on: ubuntu-latest
 
     # steps:
@@ -18,7 +16,7 @@ jobs:
     #     run: |
     #       repo_name=$(echo "${{ github.repository }}" | cut -d'/' -f2 | tr '[:upper:]' '[:lower:]')
     #       docker build . --file Dockerfile --tag "$repo_name:$(date +%s)"
-    # steps:
+    steps:
       # Checkout the repository
       - uses: actions/checkout@v4
 
