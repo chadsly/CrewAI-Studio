@@ -47,7 +47,9 @@ COPY ./ /CrewAI-Studio/
 ENV PYTHONPATH="/CrewAI-Studio/app"
 
 # Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt
+
 
 # Expose necessary ports
 EXPOSE 8501 8000

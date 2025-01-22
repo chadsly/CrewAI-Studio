@@ -14,3 +14,4 @@ psycopg2-binary
 pyvis
 fastapi
 uvicorn
+# chromadb==0.4.22
