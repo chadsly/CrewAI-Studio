@@ -1,4 +1,4 @@
-# Baseimage
+# Base image
 FROM python:3.12.5-slim
 
 # Install build tools and dependencies
@@ -8,20 +8,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy CrewAI-Studio
-RUN mkdir /CrewAI-Studio
-COPY ./ /CrewAI-Studio/
-
 # Set working directory
 WORKDIR /CrewAI-Studio
 
-# Set PYTHONPATH to include the app directory
-ENV PYTHONPATH="/CrewAI-Studio/app"
+# Copy only requirements first to leverage Docker caching
+COPY requirements.txt ./
 
 # Upgrade pip and install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
 
+# Copy application files (after dependencies to leverage caching)
+COPY ./ /CrewAI-Studio/
+
+# Set PYTHONPATH to include the app directory
+ENV PYTHONPATH="/CrewAI-Studio/app"
+
+# Expose necessary ports
 EXPOSE 8501 8000
 
 # Start both Streamlit and FastAPI
