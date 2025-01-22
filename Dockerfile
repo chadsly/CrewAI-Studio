@@ -48,7 +48,11 @@ ENV PYTHONPATH="/CrewAI-Studio/app"
 
 # Install Python dependencies
 # RUN pip install --no-cache-dir -r requirements.txt
-RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt
+# RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt
+RUN apk add --no-cache libstdc++ && \
+    pip install --no-cache-dir onnxruntime>=1.14.1 && \
+    pip install --no-cache-dir -r requirements.txt
+
 
 
 # Expose necessary ports
