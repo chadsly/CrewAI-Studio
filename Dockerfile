@@ -46,14 +46,15 @@ COPY ./ /CrewAI-Studio/
 # Set PYTHONPATH to include the app directory
 ENV PYTHONPATH="/CrewAI-Studio/app"
 
+# Install glibc for onnxruntime compatibility
+RUN apk add --no-cache bash curl && \
+    curl -Lo /etc/apk/keys/sgerrand.rsa.pub https://alpine-pkgs.sgerrand.com/sgerrand.rsa.pub && \
+    curl -Lo /glibc.apk https://github.com/sgerrand/alpine-pkg-glibc/releases/download/2.35-r0/glibc-2.35-r0.apk && \
+    apk add /glibc.apk && \
+    rm /glibc.apk
+
 # Install Python dependencies
-# RUN pip install --no-cache-dir -r requirements.txt
-# RUN pip install --no-cache-dir --use-deprecated=legacy-resolver -r requirements.txt
-RUN apk add --no-cache libstdc++ && \
-    pip install --no-cache-dir onnxruntime>=1.14.1 && \
-    pip install --no-cache-dir -r requirements.txt
-
-
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose necessary ports
 EXPOSE 8501 8000
