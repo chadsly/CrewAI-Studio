@@ -13,6 +13,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Build the Docker image
-      run: docker build . --file Dockerfile --tag ${{ github.repository##*/ }}:$(date +%s)
+      - uses: actions/checkout@v4
+      - name: Extract project name and build Docker image
+        run: |
+          repo_name=$(echo ${{ github.repository }} | cut -d'/' -f2)
+          docker build . --file Dockerfile --tag $repo_name:$(date +%s)
